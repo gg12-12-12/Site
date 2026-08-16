@@ -1,0 +1,32 @@
+{
+  "name": "HOLLY LIQUID",
+  "short_name": "HOLLY LIQUID",
+  "description": "Рідини ELFLIQ, Chaser Lux та одноразки BANGBLAZE. Швидка доставка InPost по Польщі.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#F5C518",
+  "lang": "uk",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -9,7 +9,7 @@
  * бачитимуть стару закешовану версію сайту!
  */
 
-const CACHE_NAME = 'holyliquid-v69';
+const CACHE_NAME = 'holyliquid-v70';
 
 // Файли, які кешуються одразу при встановленні.
 const PRECACHE_URLS = [

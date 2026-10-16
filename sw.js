@@ -16,7 +16,7 @@
  * в CACHE_NAME і далі варто міняти при кожному оновленні — тоді старий
  * кеш гарантовано прибирається.
  */
-const CACHE_NAME = 'holyliquid-v8';
+const CACHE_NAME = 'holyliquid-v9';
 const SHELL = './index.html';          // сам магазин — один ключ для будь-яких параметрів адреси
 const PRECACHE_URLS = ['./', SHELL, './manifest.json'];
 

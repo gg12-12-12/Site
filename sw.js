@@ -1,0 +1,125 @@
+/**
+ * HOLLY LIQUID — Service Worker
+ *
+ * Магазин відкривається як справжній застосунок: МИТТЄВО з памʼяті
+ * телефона, а нова версія тихо завантажується у фоні й зʼявляється при
+ * наступному запуску.
+ *
+ * Раніше було навпаки — «спершу інтернет»: при кожному запуску (зокрема
+ * з іконки на головному екрані) телефон заново завантажував увесь сайт
+ * (~3 МБ), а збережену копію брав лише без інтернету. До того ж Telegram
+ * відкриває магазин із різними параметрами в адресі (?pt=…&promos=…), і
+ * збережена копія не знаходилась — кожна адреса здавалась новою.
+ *
+ * ОНОВЛЕННЯ САЙТУ: після заливання нового index.html клієнти побачать
+ * його з НАСТУПНОГО запуску (цей — ще зі збереженої копії). Номер версії
+ * версію тепер передає index.html (SITE_BUILD) — при його оновленні старий
+ * кеш гарантовано прибирається.
+ */
+// Версія береться з адреси, з якою сайт підключає цей файл (sw.js?b=…).
+// Номер живе в index.html (SITE_BUILD) і оновлюється разом із ним — тож
+// САМ sw.js більше НЕ ПОТРІБНО змінювати при оновленнях сайту.
+const BUILD = new URL(self.location.href).searchParams.get('b') || 'base';
+const CACHE_NAME = 'holyliquid-' + BUILD;
+const SHELL = './index.html';          // сам магазин — один ключ для будь-яких параметрів адреси
+const PRECACHE_URLS = ['./', SHELL, './manifest.json'];
+// Фото товарів (/api/p/<відбиток>) — окреме сховище, НЕ стирається при оновленні
+// сайту: адреса фото = його відбиток, тож вміст за нею ніколи не змінюється.
+// v2: стара версія могла зберегти НЕВДАЛУ відповідь (коли бот перезапускався),
+// і фото в такого клієнта лишалось «битим» назавжди. Нова назва = чистий старт.
+const PHOTO_CACHE = 'holyliquid-photos-v2';
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+      .catch(() => {})
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== PHOTO_CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+// Оновити збережену копію з мережі (у фоні). Браузер сам перевіряє, чи
+// файл змінився (якщо ні — сервер відповідає коротким «не змінився»),
+// тож зайвих мегабайтів не витрачається.
+function refresh(request, key) {
+  // no-cache: завжди спитати сервер, чи змінився файл (якщо ні — коротке «не змінився»).
+  // Інакше браузер міг віддати стару копію зі свого кешу, і sw.js затирав нею свіжу.
+  return fetch(request, { cache: 'no-cache' })
+    .then((response) => {
+      if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(key || request, copy)).catch(() => {});
+      }
+      return response;
+    })
+    .catch(() => null);
+}
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  // Фото товарів з бота: спершу памʼять телефона, інакше — мережа (і зберегти)
+  if (request.url.indexOf('/api/p/') !== -1) {
+    // Зберігаємо ЛИШЕ справжнє фото (статус 200). Запит — у режимі cors, щоб
+    // статус було видно: «непрозора» відповідь могла бути й помилкою 502.
+    event.respondWith(caches.open(PHOTO_CACHE).then((cache) =>
+      cache.match(request).then((hit) => {
+        if (hit && hit.ok) return hit;
+        return fetch(request.url, { mode: 'cors', credentials: 'omit' }).then((resp) => {
+          if (resp && resp.ok) cache.put(request, resp.clone()).catch(() => {});
+          return resp;
+        });
+      })
+    ).catch(() => fetch(request)));
+    return;
+  }
+  if (request.url.indexOf('vcheck=') !== -1) return;   // перевірка новішої версії — завжди з мережі
+  if (!request.url.startsWith(self.location.origin)) return;   // інші запити до бота — напряму, без кешу
+
+  // Сам магазин: одразу збережена копія (незалежно від ?параметрів),
+  // паралельно — тихе оновлення до наступного запуску
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith((async () => {
+      // Перезапуск заради оновлення (?v=…) — спершу мережа, повз будь-які кеші
+      if (new URL(request.url).searchParams.get('v')) {
+        try {
+          const fresh = await fetch(request, { cache: 'reload' });
+          if (fresh && fresh.ok) {
+            const copy = fresh.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(SHELL, copy)).catch(() => {});
+            return fresh;
+          }
+        } catch (e) {}
+      }
+      const cached = await caches.match(SHELL);
+      const network = refresh(request, SHELL);
+      if (cached) {
+        event.waitUntil(network);
+        return cached;
+      }
+      const fresh = await network;                 // перший запуск — лише з мережі
+      return fresh || new Response('Offline', { status: 503, statusText: 'Offline' });
+    })());
+    return;
+  }
+
+  // Іконки, маніфест тощо — так само: з памʼяті, а оновлення у фоні
+  event.respondWith(
+    caches.match(request, { ignoreSearch: true }).then((cached) => {
+      const network = refresh(request);
+      if (cached) {
+        event.waitUntil(network);
+        return cached;
+      }
+      return network.then((r) => r || new Response('', { status: 504, statusText: 'Offline' }));
+    })
+  );
+});
